@@ -3,6 +3,7 @@ package link
 import (
 	"go/adv-api/pkg/db"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -53,7 +54,7 @@ func (repo *LinkRepository) Delete(id uint) error {
 	}
 	return nil
 }
-func (repo*LinkRepository) Count() int64 {
+func (repo *LinkRepository) Count() int64 {
 	var count int64
 	repo.Database.
 		Table("links").
@@ -61,12 +62,16 @@ func (repo*LinkRepository) Count() int64 {
 		Count(&count)
 	return count
 }
-func (repo *LinkRepository) GetAll(limit,offset int) []Link {
+func (repo *LinkRepository) GetAll(limit, offset int) []Link {
 	var links []Link
-	repo.Database.
+	query := repo.Database.
 		Table("links").
 		Where("deleted_at is null").
-		Order("id asc").Limit(limit).Offset(offset).Scan(&links)
-
+		Session(&gorm.Session{})
+	query.
+		Order("id asc").
+		Limit(limit).
+		Offset(offset).
+		Scan(&links)
 	return links
-	}
+}

@@ -3,7 +3,7 @@ package link
 import (
 	"fmt"
 	"go/adv-api/configs"
-	"go/adv-api/internal/stat"
+	"go/adv-api/pkg/event"
 	"go/adv-api/pkg/middleware"
 	"go/adv-api/pkg/req"
 	"go/adv-api/pkg/res"
@@ -15,21 +15,22 @@ import (
 
 type LinkHandlerDeps struct {
 	LinkRepository *LinkRepository
-	StatRepository *stat.StatRepository
 	Config         *configs.Config
+	EventBus       *event.EventBus
 }
 type LinkHandler struct {
 	LinkRepository *LinkRepository
-	StatRepository *stat.StatRepository
+	EventBus       *event.EventBus
 }
 
 func NewLinkHandler(router *http.ServeMux, deps LinkHandlerDeps) {
 	handler := &LinkHandler{LinkRepository: deps.LinkRepository,
-		StatRepository: deps.StatRepository}
+		EventBus: deps.EventBus,
+	}
 
-	router.HandleFunc("POST /link", handler.Create())
+	router.Handle("POST /link", middleware.IsAuth(handler.Create(), deps.Config))
 	router.Handle("PATCH /link/{id}", middleware.IsAuth(handler.Update(), deps.Config))
-	router.HandleFunc("DELETE /link/{id}", handler.Delete())
+	router.Handle("DELETE /link/{id}", middleware.IsAuth(handler.Delete(), deps.Config))
 	router.HandleFunc("GET /{hash}", handler.GoTo())
 	router.Handle("GET /link", middleware.IsAuth(handler.GetAll(), deps.Config))
 }
@@ -120,7 +121,10 @@ func (handler *LinkHandler) GoTo() http.HandlerFunc {
 			return
 
 		}
-		handler.StatRepository.AddClick(link.ID)
+		go handler.EventBus.Publish(event.Event{
+			Type: event.EventLinkVisited,
+			Data: link.ID,
+		})
 		http.Redirect(w, r, link.Url, http.StatusTemporaryRedirect)
 	}
 }

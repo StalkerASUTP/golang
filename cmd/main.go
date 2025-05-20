@@ -9,6 +9,7 @@ import (
 	"go/adv-api/internal/stat"
 	"go/adv-api/internal/user"
 	"go/adv-api/pkg/db"
+	"go/adv-api/pkg/event"
 	"go/adv-api/pkg/middleware"
 	"net/http"
 	"time"
@@ -26,18 +27,11 @@ func tickOperation(ctx context.Context) {
 		}
 	}
 }
-func main2() {
-
-	ctx, cancel := context.WithCancel(context.Background())
-	go tickOperation(ctx)
-	time.Sleep(2 * time.Second)
-	cancel()
-	time.Sleep(1 * time.Second)
-}
-func main() {
+func App() http.Handler {
 	conf := configs.LoadConfig()
 	db := db.NewDb(conf)
 	router := http.NewServeMux()
+	eventBus := event.NewEventBus()
 
 	// Repository
 	linkRepository := link.NewLinkRepository(db)
@@ -45,17 +39,35 @@ func main() {
 	statRepositiry := stat.NewStatRepository(db)
 	//Services
 	authService := auth.NewAuthService(userRepository)
+	statService := stat.NewStatService(&stat.StatServiceDeps{
+		EventBus:       eventBus,
+		StatRepository: statRepositiry,
+	})
+
 	//Handler
-	auth.NewAuthHandler(router, auth.AuthHandlerDeps{Config: conf,
-		 AuthService: authService})
-	link.NewLinkHandler(router, link.LinkHandlerDeps{LinkRepository: linkRepository,
-		 Config: conf,
-		  StatRepository: statRepositiry})
+	auth.NewAuthHandler(router, auth.AuthHandlerDeps{
+		Config:      conf,
+		AuthService: authService})
+	link.NewLinkHandler(router, link.LinkHandlerDeps{
+		LinkRepository: linkRepository,
+		Config:         conf,
+		EventBus:       eventBus})
+	stat.NewStatHandler(router, stat.StatHandlerDeps{
+		StatRepository: statRepositiry,
+		Config:         conf})
+	go statService.AddClick()
 	//Middleware
-	stack := middleware.Chain(middleware.CORS, middleware.Looging)
+	stack := middleware.Chain(
+		middleware.CORS,
+		middleware.Looging)
+	return stack(router)
+}
+func main() {
+	app := App()
 	server := http.Server{
 		Addr:    ":8081",
-		Handler: stack(router)}
+		Handler: app}
+
 	fmt.Println("Server is listening on port 8081")
 	server.ListenAndServe()
 }
